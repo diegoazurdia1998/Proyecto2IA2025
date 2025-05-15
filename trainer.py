@@ -1,196 +1,131 @@
-import os
-import cv2
+from keras import Sequential
+from keras.api.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from keras.api.callbacks import TensorBoard, ModelCheckpoint
+from keras.src.legacy.preprocessing.image import ImageDataGenerator
+import datetime
+import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.naive_bayes import GaussianNB
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
-import joblib
-from tqdm import tqdm
 
 
 class EmotionTrainer:
-    def __init__(self, data_path="archive"):
-        self.data_path = data_path
-        self.emotions = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
-        self.model = GaussianNB()
-        # Cargar modelos Haar Cascade una vez durante la inicialización
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        self.eye_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_eye.xml')
+    def __init__(self, train_dir="archive/train", test_dir="archive/test", target_size=(48, 48), batch_size=32):
+        """
+        Inicializa el entrenador con las rutas de los datos.
 
-    def load_images(self, subset="train"):
-        """Carga imágenes y etiquetas desde las subcarpetas"""
-        images = []
-        labels = []
+        :param train_dir: Ruta de la carpeta de entrenamiento.
+        :param test_dir: Ruta de la carpeta de prueba.
+        :param target_size: Tamaño al que se redimensionarán las imágenes (48x48 para FER2013).
+        :param batch_size: Tamaño del lote para el generador de datos.
+        """
+        self.train_dir = train_dir
+        self.test_dir = test_dir
+        self.target_size = target_size
+        self.batch_size = batch_size
+        self.model = self._build_model()
+        self.class_names = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']  # Orden alfabético
 
-        subset_path = os.path.join(self.data_path, subset)
+    def _build_model(self):
+        """Construye la arquitectura CNN."""
+        model = Sequential([
+            # Capa convolucional 1
+            Conv2D(32, (3, 3), activation='relu', input_shape=(self.target_size[0], self.target_size[1], 1)),
+            MaxPooling2D((2, 2)),
 
-        for i, emotion in enumerate(self.emotions):
-            emotion_path = os.path.join(subset_path, emotion)
-            print(f"Cargando imágenes de {emotion}...")
+            # Capa convolucional 2
+            Conv2D(64, (3, 3), activation='relu'),
+            MaxPooling2D((2, 2)),
 
-            for img_file in tqdm(os.listdir(emotion_path)):
-                img_path = os.path.join(emotion_path, img_file)
-                try:
-                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                    if img is None:
-                        continue
+            # Capa convolucional 3 (opcional para mejorar precisión)
+            Conv2D(128, (3, 3), activation='relu'),
+            MaxPooling2D((2, 2)),
 
-                    # Preprocesamiento completo
-                    processed_img = self.full_preprocess(img)
-                    if processed_img is not None:
-                        images.append(processed_img.flatten())
-                        labels.append(i)
-                except Exception as e:
-                    print(f"Error procesando {img_path}: {str(e)}")
-                    continue
+            # Aplanar y capas densas
+            Flatten(),
+            Dense(128, activation='relu'),
+            Dropout(0.5),  # Regularización para evitar overfitting
+            Dense(7, activation='softmax')  # 7 clases de emociones
+        ])
 
-        return np.array(images), np.array(labels)
+        model.compile(
+            optimizer='adam',
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        return model
 
-    def full_preprocess(self, image):
-        """Pipeline completo de preprocesamiento para una imagen"""
-        try:
-            # Convertir a color si es necesario para la detección
-            if len(image.shape) == 2:
-                color_img = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-            else:
-                color_img = image.copy()
-
-            # 1. Detección de rostros
-            faces = self.detect_faces(color_img)
-            if not faces:
-                return None
-
-            # 2. Selección del rostro principal
-            (x, y, w, h) = faces[0]
-
-            # 3. Evaluación de calidad
-            quality = self.assess_face_quality((x, y, w, h), color_img)
-            if not quality['is_acceptable']:
-                print(f"Advertencia: Calidad de rostro subóptima (Enfoque: {quality['focus_score']:.1f})")
-
-            # 4. Recorte y preprocesamiento final
-            face_roi = image[y:y + h, x:x + w] if len(image.shape) == 2 else color_img[y:y + h, x:x + w]
-
-            # 5. Alineación básica sin dlib
-            aligned_face = self.align_face_simple(face_roi)
-
-            # 6. Preprocesamiento final
-            processed = cv2.resize(aligned_face, (48, 48))
-            processed = cv2.equalizeHist(processed)
-            return processed.astype('float32') / 255.0
-
-        except Exception as e:
-            print(f"Error en preprocesamiento: {str(e)}")
-            return None
-
-    def detect_faces(self, image):
-        """Detección de rostros usando solo OpenCV"""
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        faces = self.face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(48, 48),
-            flags=cv2.CASCADE_SCALE_IMAGE
+    def _create_data_generators(self):
+        """Crea generadores de datos con aumento de datos para entrenamiento y validación."""
+        train_datagen = ImageDataGenerator(
+            rescale=1. / 255,  # Normalización
+            rotation_range=10,  # Pequeñas rotaciones para aumento de datos
+            zoom_range=0.1,
+            horizontal_flip=True  # Útil para rostros
         )
 
-        if len(faces) > 0:
-            # Ordenar por área (mayor a menor) y devolver solo el rostro principal
-            faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
-            return faces
-        return []
+        test_datagen = ImageDataGenerator(rescale=1. / 255)  # Solo normalización para test
 
-    def assess_face_quality(self, face_region, image):
-        """Evaluación de calidad del rostro sin dlib"""
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        x, y, w, h = face_region
-        face_roi = gray[y:y + h, x:x + w]
+        train_generator = train_datagen.flow_from_directory(
+            self.train_dir,
+            target_size=self.target_size,
+            color_mode='grayscale',
+            batch_size=self.batch_size,
+            class_mode='categorical'
+        )
 
-        # 1. Medición de enfoque
-        fm = cv2.Laplacian(face_roi, cv2.CV_64F).var()
-        focus_ok = fm > 80  # Umbral más bajo que antes
+        test_generator = test_datagen.flow_from_directory(
+            self.test_dir,
+            target_size=self.target_size,
+            color_mode='grayscale',
+            batch_size=self.batch_size,
+            class_mode='categorical'
+        )
 
-        # 2. Verificación de iluminación
-        hist = cv2.calcHist([face_roi], [0], None, [256], [0, 256])
-        brightness = np.sum(hist[150:]) / np.sum(hist) if np.sum(hist) > 0 else 0
-        lighting_ok = brightness > 0.15  # Umbral más bajo
+        return train_generator, test_generator
+    def train(self, X_train, y_train, X_val, y_val, epochs=10, batch_size=32):
+        """Entrena el modelo con visualización del progreso."""
+        train_generator, test_generator = self._create_data_generators()
+        log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        callbacks = [
+            TensorBoard(log_dir=log_dir, histogram_freq=1),
+            ModelCheckpoint(filepath='models/emotion_model.keras', save_best_only=True)
+        ]
+        history = self.model.fit(
+            train_generator,
+            validation_data=test_generator,
+            epochs=epochs,
+            callbacks=callbacks
+        )
 
-        # 3. Detección de ojos (sin dlib)
-        eyes = self.eye_cascade.detectMultiScale(face_roi)
-        occlusion_ok = len(eyes) >= 1  # Al menos un ojo visible
+        # Mostrar ejemplo de predicción después del entrenamiento
+        self.display_prediction_example(test_generator)
+        return history
 
-        return {
-            'focus_score': fm,
-            'brightness_score': brightness,
-            'occlusion_ok': occlusion_ok,
-            'is_acceptable': focus_ok or lighting_ok  # Umbrales más flexibles
-        }
+    def save_model(self, path='models/emotion_model.keras'):
+        """Guarda el modelo entrenado."""
+        self.model.save(path)
 
-    def align_face_simple(self, face_image):
-        """Alineación básica usando solo OpenCV"""
-        if len(face_image.shape) == 3:
-            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = face_image.copy()
+    def display_prediction_example(self, test_generator):
+        """Muestra las probabilidades de predicción para un lote de imágenes de prueba."""
 
-        eyes = self.eye_cascade.detectMultiScale(gray)
+        # Obtener un lote de datos de prueba
+        test_images, test_labels = next(test_generator)
 
-        if len(eyes) >= 2:
-            # Tomar los dos primeros ojos detectados
-            (ex1, ey1, ew1, eh1), (ex2, ey2, ew2, eh2) = eyes[:2]
+        # Predecir emociones para el lote
+        predictions = self.model.predict(test_images)
 
-            # Calcular centro de los ojos
-            eye1_center = (ex1 + ew1 // 2, ey1 + eh1 // 2)
-            eye2_center = (ex2 + ew2 // 2, ey2 + eh2 // 2)
+        # Seleccionar una imagen aleatoria del lote
+        idx = np.random.randint(0, len(test_images))
+        image = test_images[idx]
+        true_label = np.argmax(test_labels[idx])
+        pred_probs = predictions[idx]
 
-            # Calcular ángulo entre ojos
-            dY = eye2_center[1] - eye1_center[1]
-            dX = eye2_center[0] - eye1_center[0]
-            angle = np.degrees(np.arctan2(dY, dX))
+        # Mostrar imagen y probabilidades
+        plt.imshow(image.squeeze(), cmap='gray')
+        plt.title(f"True: {self.class_names[true_label]}")
+        plt.axis('off')
+        plt.show()
 
-            # Rotar la imagen
-            M = cv2.getRotationMatrix2D((face_image.shape[1] // 2, face_image.shape[0] // 2), angle, 1)
-            rotated = cv2.warpAffine(face_image, M, (face_image.shape[1], face_image.shape[0]))
-            return rotated
-
-        return face_image  # Devolver original si no se puede alinear
-
-    def preprocess_data(self, X):
-        """Normaliza los datos de píxeles"""
-        return X / 255.0
-
-    def train(self, save_model=True):
-        """Entrena el modelo y opcionalmente lo guarda"""
-        X, y = self.load_images("train")
-
-        # Verificar que tenemos datos
-        if len(X) == 0:
-            raise ValueError("No se pudieron cargar imágenes para entrenamiento")
-
-        X = self.preprocess_data(X)
-
-        # Dividir en entrenamiento y validación
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42)
-
-        print("Entrenando modelo...")
-        self.model.fit(X_train, y_train)
-
-        # Evaluación
-        val_pred = self.model.predict(X_val)
-        print("\nReporte de Clasificación:")
-        print(classification_report(y_val, val_pred, target_names=self.emotions))
-
-        if save_model:
-            os.makedirs("model", exist_ok=True)
-            joblib.dump(self.model, "model/emotion_classifier_1.joblib")
-            print("\nModelo guardado en model/emotion_classifier.joblib")
-
-        return self.model
-
-if __name__ == "__main__":
-    print("\nIniciando entrenamiento...")
-    trainer = EmotionTrainer()
-    trainer.train()
+        # Imprimir probabilidades en consola
+        print("\nProbabilidades por emoción:")
+        for i, (class_name, prob) in enumerate(zip(self.class_names, pred_probs)):
+            print(f"{class_name}: {prob * 100:.2f}%")
