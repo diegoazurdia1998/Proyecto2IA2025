@@ -1,0 +1,74 @@
+<div style="margin-top: 30px;">
+  <video id="video" width="320" height="240" autoplay></video>
+  <canvas id="canvas" width="48" height="48" style="display:none;"></canvas>
+
+  <br>
+  <button id="iniciar">Iniciar predicción</button>
+
+  <div id="resultado" style="
+    font-size: 18px;
+    background: #fff;
+    padding: 10px 20px;
+    display: inline-block;
+    border-radius: 10px;
+    margin-top: 10px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.1);
+  ">⏳ Esperando...</div>
+
+  <br>
+  <a href="index.php" style="color: purple; margin-top: 15px; display: inline-block;">← Volver al menú</a>
+</div>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const resultado = document.getElementById('resultado');
+  const iniciarBtn = document.getElementById('iniciar');
+  const modeloSeleccionado = document.getElementById("modelo-seleccionado");
+
+  let intervalo = null;
+
+  // Activar cámara al cargar
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+      video.srcObject = stream;
+    })
+    .catch(err => {
+      resultado.innerText = "❌ No se pudo acceder a la cámara.";
+    });
+
+  function enviarCuadro() {
+    const modelo = modeloSeleccionado.value;
+    if (!modelo) {
+      resultado.innerText = "❌ Modelo no seleccionado.";
+      return;
+    }
+
+    ctx.drawImage(video, 0, 0, 48, 48);
+    const imagenData = canvas.toDataURL('image/jpeg');
+
+    fetch('predecir_ajax.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imagen: imagenData, modelo: modelo })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.emocion && data.probabilidad !== undefined) {
+        resultado.innerText = `😊 ${data.emocion} (${data.probabilidad}%)`;
+      } else {
+        resultado.innerText = "❌ Error en predicción.";
+      }
+    })
+    .catch(err => {
+      resultado.innerText = "❌ Error en predicción.";
+    });
+  }
+
+  iniciarBtn.addEventListener("click", () => {
+    if (intervalo) clearInterval(intervalo);
+    resultado.innerText = "🔄 Iniciando predicción...";
+    intervalo = setInterval(enviarCuadro, 2000);
+  });
+</script>
