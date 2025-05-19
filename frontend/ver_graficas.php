@@ -80,6 +80,30 @@ ini_set('display_errors', 1);
 
     if (!$python || !$script || !$modelo_path) {
         echo "<p class='error'>Error: No se pudieron resolver las rutas correctamente.</p>";
+        if(!$python)
+        {
+            echo "<p class='error'>Error: No se pudo resolver la ruta de python. $python </p>";
+        }
+        else
+        {
+            echo "Python ok. $python";
+        }
+        if(!$script)
+        {
+            echo "<p class='error'>Error: No se pudo resolver la ruta de script. $script </p>";
+        }
+        else
+        {
+            echo "<p>Script ok. $script</p>";
+        }
+        if (!$modelo_path)
+        {
+            echo "<p class='error'>Error: No se pudo resolver la ruta del modelo. $modelo_path </p>";
+        }
+        else
+            {
+                echo "<p>Modelo ok. $modelo_path</p>";
+            }
     } else {
         $comando = "\"$python\" \"$script\" \"$modelo_path\"";
         $salida = shell_exec($comando);
