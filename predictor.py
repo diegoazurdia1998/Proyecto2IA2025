@@ -32,20 +32,21 @@ class EmotionPredictor:
         return predictions
 
     def display_prediction(self, image):
-        """Muestra las probabilidades de predicción para una imagen dada."""
-        # Preprocesar la imagen
+        """Devuelve las probabilidades de predicción para una imagen dada como string."""
         processed_image = self.preprocess_image(image)
-        # Asegurarse de que la forma sea correcta
-        processed_image = np.squeeze(processed_image)  # Eliminar dimensiones innecesarias
-        predictions = self.model.predict(np.expand_dims(processed_image, axis=0))  # Añadir dimensión para el batch
-        # Obtener las probabilidades y las clases
+        processed_image = np.squeeze(processed_image)
+        predictions = self.model.predict(np.expand_dims(processed_image, axis=0))
         pred_probs = predictions[0]
-        for i, (class_name, prob) in enumerate(zip(self.class_names, pred_probs)):
-            print(f"{class_name}: {prob * 100:.2f}%")  # Mostrar todas las emociones con sus porcentajes
-        # Mostrar la emoción más probable
+
+        output = ["Probabilidades por emoción:"]
+        for class_name, prob in zip(self.class_names, pred_probs):
+            output.append(f"{class_name}: {prob * 100:.2f}%")
+
         true_label = np.argmax(pred_probs)
-        print(
-            f"\nEmoción más probable: {self.class_names[true_label]} con {pred_probs[true_label] * 100:.2f}% de probabilidad.")
+        output.append("")
+        output.append(f"Emoción más probable: {self.class_names[true_label]} ({pred_probs[true_label]*100:.2f}%)")
+
+        return "\n".join(output)
 
     def predict_from_webcam(self):
         """Realiza predicciones en tiempo real utilizando la cámara web."""

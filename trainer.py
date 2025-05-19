@@ -1,11 +1,11 @@
-from keras import Sequential
-from keras.api.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
-from keras.api.callbacks import TensorBoard, ModelCheckpoint
-from keras.src.legacy.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-
+import os
 
 class EmotionTrainer:
     def __init__(self, train_dir="archive/train", test_dir="archive/test", target_size=(48, 48), batch_size=32):
@@ -17,8 +17,9 @@ class EmotionTrainer:
         :param target_size: Tamaño al que se redimensionarán las imágenes (48x48 para FER2013).
         :param batch_size: Tamaño del lote para el generador de datos.
         """
-        self.train_dir = train_dir
-        self.test_dir = test_dir
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        self.train_dir = os.path.join(base_path, "archive", "train")
+        self.test_dir = os.path.join(base_path, "archive", "test")
         self.target_size = target_size
         self.batch_size = batch_size
         self.model = self._build_model()
