@@ -1,35 +1,62 @@
 <div style="margin-top: 30px;">
+  <!-- Video y canvas -->
   <video id="video" width="320" height="240" autoplay></video>
-  <canvas id="canvas" width="48" height="48" style="display:none;"></canvas>
+
+  <!-- Canvas de predicción (48x48) -->
+  <canvas id="canvas_pred" width="48" height="48" style="display:none;"></canvas>
+
+  <!-- Canvas para previsualización (224x224) -->
+  <canvas id="canvas_preview" width="224" height="224" style="display:none;"></canvas>
 
   <br>
-  <button id="iniciar">Iniciar predicción</button>
 
+  <!-- Botón de inicio -->
+  <button id="iniciar" style="
+    padding: 10px 20px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: none;
+    background-color: #ffffff;
+    color: #000000;
+    cursor: pointer;
+    margin-top: 15px;
+  ">Iniciar predicción</button>
+
+  <!-- Resultado -->
   <div id="resultado" style="
     font-size: 18px;
-    background: #fff;
+    background: #ffffff;
+    color: #000000;
     padding: 10px 20px;
     display: inline-block;
     border-radius: 10px;
     margin-top: 10px;
     box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    white-space: pre-wrap;
+    text-align: left;
+    max-width: 90%;
   ">⏳ Esperando...</div>
 
-  <br>
-  <a href="index.php" style="color: purple; margin-top: 15px; display: inline-block;">← Volver al menú</a>
+  <!-- Imagen capturada -->
+  <div id="preview-contenedor" style="margin-top: 20px;"></div>
 </div>
 
 <script>
   const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  const canvasPred = document.getElementById('canvas_pred');
+  const ctxPred = canvasPred.getContext('2d');
+
+  const canvasPreview = document.getElementById('canvas_preview');
+  const ctxPreview = canvasPreview.getContext('2d');
+
   const resultado = document.getElementById('resultado');
   const iniciarBtn = document.getElementById('iniciar');
   const modeloSeleccionado = document.getElementById("modelo-seleccionado");
+  const previewContenedor = document.getElementById('preview-contenedor');
 
   let intervalo = null;
 
-  // Activar cámara al cargar
+  // Activar cámara
   navigator.mediaDevices.getUserMedia({ video: true })
     .then(stream => {
       video.srcObject = stream;
@@ -45,9 +72,21 @@
       return;
     }
 
-    ctx.drawImage(video, 0, 0, 48, 48);
-    const imagenData = canvas.toDataURL('image/jpeg');
+    // Captura 48x48 para predicción
+    ctxPred.drawImage(video, 0, 0, 48, 48);
+    const imagenData = canvasPred.toDataURL('image/jpeg');
 
+    // Captura 224x224 para mostrar al usuario
+    ctxPreview.drawImage(video, 0, 0, 224, 224);
+    const imagenPreview = canvasPreview.toDataURL('image/jpeg');
+
+    // Mostrar imagen en pantalla
+    previewContenedor.innerHTML = `
+      <img src="${imagenPreview}" alt="Captura actual"
+           style="border-radius: 10px; max-width: 100%; box-shadow: 0 0 10px rgba(0,0,0,0.4); margin-top: 10px;">
+    `;
+
+    // Enviar a backend para analizar
     fetch('predecir_ajax.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,20 +94,27 @@
     })
     .then(res => res.json())
     .then(data => {
+      console.log("📦 Respuesta del servidor:", data);
+
       if (data.emocion && data.probabilidad !== undefined) {
         resultado.innerText = `😊 ${data.emocion} (${data.probabilidad}%)`;
       } else {
-        resultado.innerText = "❌ Error en predicción.";
+        // Mostrar el contenido de debug_salida.txt si falla
+        fetch('leer_debug.php')
+          .then(res => res.text())
+          .then(texto => {
+            resultado.innerText = "⚠️ Debug del backend:\n" + texto;
+          });
       }
     })
     .catch(err => {
-      resultado.innerText = "❌ Error en predicción.";
+      resultado.innerText = "❌ Error de conexión con el servidor.";
     });
   }
 
   iniciarBtn.addEventListener("click", () => {
     if (intervalo) clearInterval(intervalo);
-    resultado.innerText = "🔄 Iniciando predicción...";
-    intervalo = setInterval(enviarCuadro, 2000);
+    resultado.innerText = "🔄 Iniciando predicción automática...";
+    intervalo = setInterval(enviarCuadro, 2000); // cada 2 segundos
   });
 </script>

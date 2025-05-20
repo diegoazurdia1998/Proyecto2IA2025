@@ -1,0 +1,4 @@
+{
+    "imagen_prefix": "data:image\/jpeg;base64,\/9j\/4AAQSkZJRgABAQAAAQABAAD\/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCI",
+    "modelo": "emotion_model_prueba_de_10.keras"
+}
