@@ -2,15 +2,11 @@
   <!-- Video y canvas -->
   <video id="video" width="320" height="240" autoplay></video>
 
-  <!-- Canvas de predicción (48x48) -->
   <canvas id="canvas_pred" width="48" height="48" style="display:none;"></canvas>
-
-  <!-- Canvas para previsualización (224x224) -->
   <canvas id="canvas_preview" width="224" height="224" style="display:none;"></canvas>
 
   <br>
 
-  <!-- Botón de inicio -->
   <button id="iniciar" style="
     padding: 10px 20px;
     font-size: 16px;
@@ -22,7 +18,6 @@
     margin-top: 15px;
   ">Iniciar predicción</button>
 
-  <!-- Resultado -->
   <div id="resultado" style="
     font-size: 18px;
     background: #ffffff;
@@ -37,7 +32,6 @@
     max-width: 90%;
   ">⏳ Esperando...</div>
 
-  <!-- Imagen capturada -->
   <div id="preview-contenedor" style="margin-top: 20px;"></div>
 </div>
 
@@ -61,7 +55,7 @@
     .then(stream => {
       video.srcObject = stream;
     })
-    .catch(err => {
+    .catch(() => {
       resultado.innerText = "❌ No se pudo acceder a la cámara.";
     });
 
@@ -76,45 +70,38 @@
     ctxPred.drawImage(video, 0, 0, 48, 48);
     const imagenData = canvasPred.toDataURL('image/jpeg');
 
-    // Captura 224x224 para mostrar al usuario
+    // Captura visual
     ctxPreview.drawImage(video, 0, 0, 224, 224);
     const imagenPreview = canvasPreview.toDataURL('image/jpeg');
-
-    // Mostrar imagen en pantalla
     previewContenedor.innerHTML = `
       <img src="${imagenPreview}" alt="Captura actual"
            style="border-radius: 10px; max-width: 100%; box-shadow: 0 0 10px rgba(0,0,0,0.4); margin-top: 10px;">
     `;
 
-    // Enviar a backend para analizar
+    // Solo enviamos imagen al backend (no hacemos nada con la respuesta)
     fetch('predecir_ajax.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagen: imagenData, modelo: modelo })
-    })
-    .then(res => res.json())
-    .then(data => {
-      console.log("📦 Respuesta del servidor:", data);
-
-      if (data.emocion && data.probabilidad !== undefined) {
-        resultado.innerText = `😊 ${data.emocion} (${data.probabilidad}%)`;
-      } else {
-        // Mostrar el contenido de debug_salida.txt si falla
-        fetch('leer_debug.php')
-          .then(res => res.text())
-          .then(texto => {
-            resultado.innerText = "⚠️ Debug del backend:\n" + texto;
-          });
-      }
-    })
-    .catch(err => {
-      resultado.innerText = "❌ Error de conexión con el servidor.";
     });
+  }
+
+  function actualizarResultado() {
+    fetch('leer_resultado_txt.php')
+      .then(res => res.text())
+      .then(texto => {
+        resultado.innerText = texto;
+      });
   }
 
   iniciarBtn.addEventListener("click", () => {
     if (intervalo) clearInterval(intervalo);
     resultado.innerText = "🔄 Iniciando predicción automática...";
-    intervalo = setInterval(enviarCuadro, 2000); // cada 2 segundos
+    enviarCuadro(); // primera vez
+    actualizarResultado(); // primer resultado
+    intervalo = setInterval(() => {
+      enviarCuadro();       // envía imagen cada 2s
+      actualizarResultado(); // actualiza texto cada 2s
+    }, 2000);
   });
 </script>
